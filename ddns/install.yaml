@@ -1,0 +1,73 @@
+---
+- name: Install and configure ddns
+  hosts: target
+  become: true
+  remote_user: root
+
+  tasks:
+    - name: Install required packages
+      ansible.builtin.yum:
+        name: 
+          - git
+          - curl
+          - wget
+          - tar
+          - zip
+        state: present
+
+    - name: Download and extract ddns binary securely
+      ansible.builtin.unarchive:
+        src: https://github.com/srikanth-iyengar/ddns/releases/download/v0.1.0/ddns-linux-amd64.tar.gz
+        dest: /usr/local/bin
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure correct SELinux context for ddns binary
+
+      ansible.builtin.command: restorecon -v /usr/local/bin/ddns
+      changed_when: false
+      failed_when: false
+
+    - name: Create systemd service file for ddns
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ddns.service
+        content: |
+          [Unit]
+          Description=Tiny DDNS service to sync the ip against alias
+          After=network.target
+
+          [Service]
+          User=root
+          Type=simple
+          ExecStart=/usr/local/bin/ddns agent --grpc-host 192.168.122.210 --grpc-port 8000 --hostname {{ inventory_hostname }}.local.net --net enp1s0
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart ddns service
+
+    - name: Ensure ddns service is enabled and started
+      ansible.builtin.systemd:
+        name: ddns
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Deploy SSH Pub Key for root
+      ansible.posix.authorized_key:
+        user: root
+        state: present
+        key: "{{ lookup('file', '~/.ssh/local-cluster.pub') }}"
+
+  handlers:
+    - name: Restart ddns service
+      ansible.builtin.systemd:
+        name: ddns
+        state: restarted
+        daemon_reload: true
