@@ -1,0 +1,23 @@
+---
+- name: Prepare node
+  hosts: control-plane
+  remote_user: root
+  vars:
+    ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  tasks:
+    - name: Create join token
+      ansible.builtin.command:
+        cmd: kubeadm token create --print-join-command
+      register: join_command
+
+    - name: Store the token as fact
+      ansible.builtin.set_fact:
+        worker_join_command: "{{ join_command.stdout }}"
+
+- name: Join worker nodes
+  hosts: worker-plane
+  remote_user: root
+  tasks:
+    - name: Join worker nodes
+      ansible.builtin.command:
+        cmd: "{{ hostvars[groups['control-plane'][0]].worker_join_command }}"

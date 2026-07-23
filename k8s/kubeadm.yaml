@@ -2,6 +2,8 @@
 - name: Prepare node
   hosts: k8s
   remote_user: root
+  vars:
+    ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   tasks:
     - name: Install packages
       ansible.builtin.yum:
@@ -12,6 +14,7 @@
           - tar
           - zip
           - cri-o
+          - crun
         state: present
 
     - name: Install kubeadm
@@ -40,19 +43,33 @@
         curl -sSL "https://raw.githubusercontent.com/kubernetes/release/${RELEASE_VERSION}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf" | sed "s:/usr/bin:${DOWNLOAD_DIR}:g" | sudo tee /usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf
 
       args:
-        creates:
-          - /usr/local/bin/crictl
-          - /usr/local/bin/kubeadm
-          - /usr/local/bin/kubelet
+        creates: /usr/local/bin/kubeadm
+
     - name: Start crio
       ansible.builtin.service:
         name: crio
         state: started
         enabled: true
+        daemon_reload: true
+
+    - name: Enable IPv4 forwarding
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: true
+        state: present
+        reload: true
 
     - name: Start kubelet
       ansible.builtin.service:
         name: kubelet
         state: started
         enabled: true
+        daemon_reload: true
 
+    - name: Stop firewalld
+      ansible.builtin.service:
+        name: firewalld
+        state: stopped
+        enabled: false
+        daemon_reload: true
